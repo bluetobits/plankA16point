@@ -1,4 +1,4 @@
-//PlankA16 Points Steve Lomax June 12/06/2025
+//PlankA16 v10.3 Points Steve Lomax June 14/06/2025 condensed user settings
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 #include <Encoder.h>
@@ -835,7 +835,7 @@ void setup() {
   lcd.init();  // initialize the lcd
   lcd.backlight();
   lcd.setCursor(2, 0);
-  lcd.print("Point control v9");
+  lcd.print("Point control v10.3");
   lcd.setCursor(2, 1);
   lcd.print("Steve Lomax 2025");
   delay(1000);

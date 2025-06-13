@@ -20,41 +20,79 @@
 #endif
 
 #define SERVO_FREQ 50  // Analog servos run at ~50 Hz updates
-constexpr int NO_OF_SERVOS = 16;
-const int TOP_PULSE_LEN = 2400;    // setting the maximum cw servo position(actual = 2500 but not all servos are the same)
-const int BOTTOM_PULSE_LEN = 600;  //setting the minimum ccw servo position
 
-constexpr int8_t POINT_PAIRS[] = { 0, 1, 2, 3, 4, 5, 6,7,
-                                   8, 9, 10, 11, 3, 13, 14, 15};
+//////////// USER CONGIGURABLE VARIABLES //////////
+///////////////////////////////////////////////////
+
+//CHANGE THE VALUES FOR THE i2c ADDRESSES IDENTIFIED ON THE SERIAL MONITOR AT STARTUP. REMEMBER TO SET ADDRESS LINKS
+constexpr int PCF1_ADDRESS = 0X20;  // FIRST EXPANDER
+//constexpr int PCF2_ADDRESS = 0X22;// SECOND EXPANDER
+constexpr int PCA1_ADDRESS = 0X40;  //FIRST SERVO DRIVER
+//constexpr int PCF2_ADDRESS = 0X43;//SECOND SERVO DRIVER
+constexpr int LCD_ADDRESS = 0X27;   //LCD DISPLAY
+
+constexpr int NO_OF_SERVOS = 16;    // ENTER THE NUMBER OF SERVOS UP TO 16 this can be 16 even if not all implemebted 
+const uint8_t NO_OF_LEDS = 16;      // ENTER THE NUMBER OF NEO PIXEL LEDs (edit setLeds() function to customise LED logic)
+
+// POINT_PAIRS
+// This determines which points are opreated together my one switch. 
+// the default numerical order infers that each switch operates its own point
+// the switch is represented by the number, the point is represented by the position in the list
+// a negative number denotes that point thrown / closed position is reversed
+// the lowest switch position in a pair or group is the operating switch for the pair or group
+// every point must have a switch allocated to it.
+// the lowest switch in a group must operate it's own point 
+// point paiting is disabled when calibrating or disabled in the menu.
+
+constexpr int8_t POINT_PAIRS[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+
+// switches are numbers            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 
+// points are positions            |  |  -  |  -  |  |  -  |  -  |   -   |   |   |   |                               
+// example point pairs             0, 1, 1, 3,-3, 5, 5, 3, 8, 8, 10,-10, 12, 13, 14, 15
+// in this example                    !..!  |  |  !..!  |  !..!  !...!
+//                                          !..!........!
+// switch 0 -> point 0, switch 1 -> points 1 & 2, switch 2 -> not used, switch 3-> points 3 & 4(reversed) & 7,
+// switch 4 not used, switch 5 -> points 5 & 6 , switch 7 not used, switch 8 -> points 8 & 9, ...
+
+//LEDS_MIMIC this is the order of the leds for each point. default is 1 to 1 - led 1 indicates point 1. 
+// if editing ensure each led is exclusively allocated a point number. by its position in the list. 
+const uint8_t LEDS_MIMIC[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+
+const uint8_t DATA_PIN = 11;  // neopixels data connect to pin via 50 ohm resistor
+uint8_t onSat = 255;          // Global. Neopixel saturation level (0-255)  255 is pure colour, 122 is pale colour, 0 is white
+uint8_t onLev = 80;           // Global. Neopixel brightness level (0-255) 0 is not lit. 255 is max brightness (and current)
+uint8_t onHue = 255;          // Global. Neopixel colour ROYGBIV from 0 to 255
+
+constexpr int ENCODER_PUSH = 8;// pin connection (input pullup switch to gnd) 
+const uint8_t ENCA_PIN = 3;  // encoder pin A pinmode set by library pin 2 or 3 recommended
+const uint8_t ENCB_PIN = 2;  // encoder pin B pinmode set by library pin 2 or 3 recommended
+
+int moveSpeed = 60; //* initial move speed. increase to make faster. this is adjusted through menu.
+int pointPairing = 0;  //* flag if selected. int because memstruct must be the same tyoes 
+
+const int MIN_MOVE_SPEED = 1; // must not be zero
+const int MAX_MOVE_SPEED = 100; // as fast as the servos can travel
+const int MID_POINT = 1500;//for setting servos
+const int TOP_PULSE_LEN = 2400;    // *setting the maximum cw servo position(actual = 2500 but not all servos are the same)
+const int BOTTOM_PULSE_LEN = 600;  // *setting the minimum ccw servo position
+
+//* these values are overwritten by EEPROM and will only exist until saved from the menu option.
+const unsigned long flashSpeed = 400;  // flash rate in ms for LED indicators.
+
+//////////// END OF USER CONGIGURABLE VARIABLES //////////
+
+
 
 
 constexpr int EEPROM_ADDRESS = 0;  // Define EEPROM base address
-constexpr int ENCODER_PUSH = 8;
-constexpr int LONG_PUSH = 2000;
-// unsigned long pollTimeOut;
-//constexpr unsigned int pollFreq = 2;
-const uint8_t ENCA_PIN = 3;  // encoder pin A
-const uint8_t ENCB_PIN = 2;  // encoder pin B
 int cal = 0;
-int pointPairing = 0;     // flag if selected. int because memstruct must be the same tyoes
 int localAutomation = 0;  //flag if selected  int because memstruct must be the same tyoes
 bool centreServoFlag = 0;
-bool changeMoveSpeed = 0;
 int lastPointMoved = 0;
-int oldLastPointMoved = 0;
-int moveSpeed = 60;
-const int MIN_MOVE_SPEED = 1;
-const int MAX_MOVE_SPEED = 100;
-const int MID_POINT = 1500;
+
 int encoderPos = 0;
 
-const uint8_t LEDS_MIMIC[] = {
-  0, 1, 2, 3, 4, 5, 6, 7,
-  8, 9, 10, 11, 12, 13, 14, 15
-};
-const uint8_t NO_OF_LEDS = 18;
-const uint8_t DATA_PIN = 11;  // neopixels data connect from here via 50 ohm resistor
-CRGB leds[NO_OF_LEDS];        //LED neopixel strip
+CRGB leds[NO_OF_LEDS];  //LED neopixel strip
 //colour Hues:
 const uint8_t Hred = 0;
 const uint8_t Hora = 32;
@@ -72,17 +110,13 @@ unsigned long timeNow;
 unsigned long flashTimeNow;
 unsigned long flashTimeout = 0;        //Global.  Neopixel flash timer
 bool flash = 0;                        //Global.  Neopixel flash status
-const unsigned long flashSpeed = 400;  // flash rate in ms
-uint8_t onSat = 255;                   // Global. Neopixel saturation level (0-255)
-uint8_t onLev = 80;                    // Global. Neopixel brightness level (0-255)
-uint8_t onHue = 255;
 
-Adafruit_PWMServoDriver PCA1 = Adafruit_PWMServoDriver(0x40);
-//Adafruit_PWMServoDriver PCA2 = Adafruit_PWMServoDriver(0x43);
-PCF8575 PCF1(0x20);  // Set the PCF1 I2C address (default is 0x20)
-//PCF8575 PCF2(0x22);  // Set the PCF2 I2C address (default is 0x20)
+Adafruit_PWMServoDriver PCA1 = Adafruit_PWMServoDriver(PCA1_ADDRESS);
+//Adafruit_PWMServoDriver PCA2 = Adafruit_PWMServoDriver(PCA2_ADDRESS);
+PCF8575 PCF1(PCF1_ADDRESS);  // Set the PCF1 I2C address (default is 0x20)
+//PCF8575 PCF2(PCF2_ADDRESS);  // Set the PCF2 I2C address (default is 0x20)
 Encoder encoder(ENCA_PIN, ENCB_PIN);
-LiquidCrystal_I2C lcd(0x27, 20, 4);  // set the LCD address to 0x27 for a 20 chars and 4 line display
+LiquidCrystal_I2C lcd(LCD_ADDRESS, 20, 4);  // set the LCD address to 0x27 for a 20 chars and 4 line display
 
 
 const int MENU_COUNT = 6;
@@ -226,7 +260,7 @@ void scanButtons() {
         lastPointMoved = i;
         lcdPos();  //writes the position character
       }
-    } 
+    }
     // else {
     //   if (!PCF2.read(i - 16)) {
     //     while (!PCF2.read(i - 16)) {}
@@ -370,7 +404,7 @@ void centreServo() {
   lcd.print(F("Select point to"));
   lcd.setCursor(0, 1);
   lcd.print(F("Centre Servo"));
-lcd.setCursor(0, 2);
+  lcd.setCursor(0, 2);
 
 
   while (digitalRead(ENCODER_PUSH) == 1) {
@@ -382,7 +416,7 @@ lcd.setCursor(0, 2);
       point[curPoint].thrownPos = MID_POINT;
       // point[curPoint].curPos = 0;
       point[curPoint].MovePoint(curPoint);
-      
+
       lcd.print(curPoint);
       lcd.print(F(" "));
 
@@ -636,16 +670,16 @@ void calibrate() {
 
     delay(50);  // debounce and flicker protection
   }
-  
 
-  while (digitalRead(ENCODER_PUSH) == LOW){}  // Wait for button release
+
+  while (digitalRead(ENCODER_PUSH) == LOW) {}  // Wait for button release
   delay(100);
   encoder.write(0);
-  lcd.clear();  // 
+  lcd.clear();  //
   // Redraw calibration menu
   lcd.setCursor(0, 0);
 
-  
+
   pointPairing = originalPointPairing;
   moveSpeed = originalMoveSpeed;
   cal = 0;  //

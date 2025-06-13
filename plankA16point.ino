@@ -79,7 +79,7 @@ uint8_t onHue = 255;
 
 Adafruit_PWMServoDriver PCA1 = Adafruit_PWMServoDriver(0x40);
 //Adafruit_PWMServoDriver PCA2 = Adafruit_PWMServoDriver(0x43);
-PCF8575 PCF1(0x21);  // Set the PCF1 I2C address (default is 0x20)
+PCF8575 PCF1(0x20);  // Set the PCF1 I2C address (default is 0x20)
 //PCF8575 PCF2(0x22);  // Set the PCF2 I2C address (default is 0x20)
 Encoder encoder(ENCA_PIN, ENCB_PIN);
 LiquidCrystal_I2C lcd(0x27, 20, 4);  // set the LCD address to 0x27 for a 20 chars and 4 line display
@@ -143,11 +143,11 @@ struct Points {
       }
       curPos += step;
       moving = true;
-      if (index < 16) {
-        PCA1.writeMicroseconds(index, curPos);
-      } else {
-        PCA2.writeMicroseconds(index - 16, curPos);
-      }
+      // if (index < 16) {
+      PCA1.writeMicroseconds(index, curPos);
+      // } else {
+      //   PCA2.writeMicroseconds(index - 16, curPos);
+      // }
     }
   }
 };
@@ -226,20 +226,21 @@ void scanButtons() {
         lastPointMoved = i;
         lcdPos();  //writes the position character
       }
-    } else {
-      if (!PCF2.read(i - 16)) {
-        while (!PCF2.read(i - 16)) {}
-        delay(10);
-        // debug("PCF2 pressed for servo ");
-        // debug(i);
+    } 
+    // else {
+    //   if (!PCF2.read(i - 16)) {
+    //     while (!PCF2.read(i - 16)) {}
+    //     delay(10);
+    //     // debug("PCF2 pressed for servo ");
+    //     // debug(i);
 
-        point[i].target = !point[i].target;
-        point[i].MovePoint(i);
-        pointPairs(i);
-        lastPointMoved = i;
-        lcdPos();  //writes the position character
-      }
-    }
+    //     point[i].target = !point[i].target;
+    //     point[i].MovePoint(i);
+    //     pointPairs(i);
+    //     lastPointMoved = i;
+    //     lcdPos();  //writes the position character
+    //   }
+    // }
   }
 }
 void pointPairs(int idx) {  //idx = the current switched point
@@ -605,11 +606,11 @@ void calibrate() {
       targetPos = constrain(targetPos, BOTTOM_PULSE_LEN, TOP_PULSE_LEN);
       point[lastPointMoved].curPos = targetPos;
       //point[lastPointMoved].MovePoint(lastPointMoved);  // ✅ this line is essential
-      if (lastPointMoved < 16) {
-        PCA1.writeMicroseconds(lastPointMoved, targetPos);
-      } else {
-        PCA2.writeMicroseconds(lastPointMoved - 16, targetPos);
-      }
+      // if (lastPointMoved < 16) {
+      PCA1.writeMicroseconds(lastPointMoved, targetPos);
+      // } else {
+      //   PCA2.writeMicroseconds(lastPointMoved - 16, targetPos);
+      // }
       setLeds();
     }
 
@@ -761,7 +762,7 @@ void setup() {
   Wire.begin();
   Serial.begin(9600);
   PCF1.begin();
-  PCF2.begin();
+  //PCF2.begin();
 
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NO_OF_LEDS);
 
@@ -813,18 +814,18 @@ void setup() {
   PCA1.begin();
   PCA1.setPWMFreq(50);
   PCA1.setOscillatorFrequency(25000000);
-  PCA2.begin();
-  PCA2.setPWMFreq(50);
-  PCA2.setOscillatorFrequency(25000000);
+  // PCA2.begin();
+  // PCA2.setPWMFreq(50);
+  // PCA2.setOscillatorFrequency(25000000);
 
 
 
   PCF1.write16(0Xffff);
   debug("PCF1 = ");
-  debugln2(PCF1.read16(), BIN);
-  PCF2.write16(0Xffff);
-  debug("PCF2 = ");
-  debugln2(PCF2.read16(), BIN);
+  //debugln2(PCF1.read16(), BIN);
+  // PCF2.write16(0Xffff);
+  // debug("PCF2 = ");
+  // debugln2(PCF2.read16(), BIN);
 
 
   lcd.setCursor(3, 3);

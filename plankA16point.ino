@@ -1,4 +1,4 @@
-//PlankA16 v10.3 Points Steve Lomax June 14/06/2025 condensed user settings
+//PlankA16 v10.4 Points Steve Lomax June 30/08/2025 condensed user settings
 #include <Wire.h>
 #include <Adafruit_PWMServoDriver.h>
 #include <Encoder.h>
@@ -8,6 +8,7 @@
 #include <LiquidCrystal_I2C.h>  //https://github.com/johnrickman/LiquidCrystal_I2C
 #include <CMRI.h>
 #include <Auto485.h>
+#include <LibPrintf.h>
 
 #define DEBUG 1
 #if DEBUG == 1
@@ -22,18 +23,23 @@
 
 #define SERVO_FREQ 50  // Analog servos run at ~50 Hz updates
 
-//////////// USER CONGIGURABLE VARIABLES //////////
+//////////// USER CONFIGURABLE VARIABLES //////////
 ///////////////////////////////////////////////////
 
 //CHANGE THE VALUES FOR THE i2c ADDRESSES IDENTIFIED ON THE SERIAL MONITOR AT STARTUP. REMEMBER TO SET ADDRESS LINKS
-constexpr int PCF1_ADDRESS = 0X21;  // FIRST EXPANDER
+constexpr uint8_t PCF1_ADDRESS = 0X21;  // FIRST EXPANDER
 //constexpr int PCF2_ADDRESS = 0X22;// SECOND EXPANDER
-constexpr int PCA1_ADDRESS = 0X40;  //FIRST SERVO DRIVER
+constexpr uint8_t PCA1_ADDRESS = 0X40;  //FIRST SERVO DRIVER
 //constexpr int PCF2_ADDRESS = 0X43;//SECOND SERVO DRIVER
-constexpr int LCD_ADDRESS = 0X27;  //LCD DISPLAY
+constexpr uint8_t LCD_ADDRESS = 0X27;  //LCD DISPLAY
 
-constexpr int NO_OF_SERVOS = 16;  // ENTER THE NUMBER OF SERVOS UP TO 16 this can be 16 even if not all implemebted
-const uint8_t NO_OF_LEDS = 16;    // ENTER THE NUMBER OF NEO PIXEL LEDs (edit setLeds() function to customise LED logic)
+constexpr uint8_t NO_OF_SERVOS = 7;    // ENTER THE NUMBER OF SERVOS UP TO 16 this can be 16 even if not all implemebted
+constexpr uint8_t NO_OF_LEDS = 7;      // ENTER THE NUMBER OF NEO PIXEL LEDs (edit setLeds() function to customise LED logic)
+constexpr uint8_t CMRI_ADDRESS = 0;    // CMRI NODE ADDRESS 0
+constexpr uint8_t DE_PIN = 5;          // RS485 module
+constexpr uint8_t EEPROM_ADDRESS = 0;  // Define EEPROM base address
+
+constexpr uint8_t threeWay = 2;  //the first servo of a 3 way point. if ni 3 way point use 0.
 
 // POINT_PAIRS
 // This determines which points are opreated together my one switch.
@@ -43,11 +49,10 @@ const uint8_t NO_OF_LEDS = 16;    // ENTER THE NUMBER OF NEO PIXEL LEDs (edit se
 // the lowest switch position in a pair or group is the operating switch for the pair or group
 // every point must have a switch allocated to it.
 // the lowest switch in a group must operate it's own point
-// point paiting is disabled when calibrating or disabled in the menu.
+// point pairing is disabled when calibrating or disabled in the menu.
 
-constexpr int8_t POINT_PAIRS[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
-
-// switches are numbers            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+constexpr int8_t POINT_PAIRS[] = { 0, 1, 2, 1, 4, 5, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+// switches are numbers            0, 1, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
 // points are positions            |  |  -  |  -  |  |  -  |  -  |   -   |   |   |   |
 // example point pairs             0, 1, 1, 3,-3, 5, 5, 3, 8, 8, 10,-10, 12, 13, 14, 15
 // in this example                    !..!  |  |  !..!  |  !..!  !...!
@@ -77,21 +82,24 @@ const int MID_POINT = 1500;        //for setting servos
 const int TOP_PULSE_LEN = 2400;    // *setting the maximum cw servo position(actual = 2500 but not all servos are the same)
 const int BOTTOM_PULSE_LEN = 600;  // *setting the minimum ccw servo position
 
+
 //* these values are overwritten by EEPROM and will only exist until saved from the menu option.
 const unsigned long flashSpeed = 400;  // flash rate in ms for LED indicators.
-
 //////////// END OF USER CONGIGURABLE VARIABLES //////////
+//unsigned long PollTimeNow;
+//unsigned long PollTime = 1500;
 
 
 
 
-constexpr int EEPROM_ADDRESS = 0;  // Define EEPROM base address
 int cal = 0;
 int localAutomation = 0;  //flag if selected  int because memstruct must be the same tyoes
 bool centreServoFlag = 0;
 int lastPointMoved = 0;
+uint32_t currentStatus = 0;
+bool cmriConnected = false;
 
-int encoderPos = 0;
+//int encoderPos = 0;
 
 CRGB leds[NO_OF_LEDS];  //LED neopixel strip
 //colour Hues:
@@ -104,30 +112,34 @@ const uint8_t Hblu = 160;
 const uint8_t Hpur = 192;
 const uint8_t Hpin = 224;
 bool moving = 0;
-
+//bool buttonPress = 0;
 
 
 unsigned long timeNow;
 unsigned long flashTimeNow;
-unsigned long flashTimeout = 0;  //Global.  Neopixel flash timer
-bool flash = 0;                  //Global.  Neopixel flash status
+unsigned long flashTimeout = 250;  //Global.  Neopixel flash timer
+
+
+bool flash = 0;  //Global.  Neopixel flash status
 
 Adafruit_PWMServoDriver PCA1 = Adafruit_PWMServoDriver(PCA1_ADDRESS);
 //Adafruit_PWMServoDriver PCA2 = Adafruit_PWMServoDriver(PCA2_ADDRESS);
 PCF8575 PCF1(PCF1_ADDRESS);  // Set the PCF1 I2C address (default is 0x20)
 //PCF8575 PCF2(PCF2_ADDRESS);  // Set the PCF2 I2C address (default is 0x20)
 Encoder encoder(ENCA_PIN, ENCB_PIN);
+Auto485 bus(DE_PIN);
 LiquidCrystal_I2C lcd(LCD_ADDRESS, 20, 4);  // set the LCD address to 0x27 for a 20 chars and 4 line display
+CMRI cmri(CMRI_ADDRESS, 32, 32, bus);       // set CMRI up as SUSIC: Address 0, cardsize: 32-bit, card 0: Input, Card 1: Output. No more cards.
 
 
-const int MENU_COUNT = 6;
+const uint8_t MENU_COUNT = 6;
 const char* menuItems[MENU_COUNT] = {
   "Exit", "Calibrate Positions", "Set Throw Speed",
   "Point Pairing", "Local Automation", "Centre Servo"
 };
-int currentMenuIndex = 0;
+uint8_t currentMenuIndex = 0;
 long lastEncoderPos = 0;
-int subMenuIndex = 0;
+uint8_t subMenuIndex = 0;
 enum SubMenuType {
   CALIBRATION,
   POINT_PAIRING,
@@ -162,6 +174,7 @@ struct Points {
   int thrownPos = 2300;
   int curPos = 700;
   bool target = 0;
+  bool changed = 0;  // for syncing change status between cmri updates
   void MovePoint(int index) {
     // Determine desired position
     int targetPos = target ? thrownPos : closedPos;
@@ -194,21 +207,15 @@ void savePointValues() {
 
   for (int i = 0; i < NO_OF_SERVOS; i++) {
     memData.mthrownPos[i] = point[i].thrownPos;
-
     memData.mclosedPos[i] = point[i].closedPos;
   }
   memData.mmoveSpeedMem = moveSpeed;
   memData.mpointPairing = pointPairing;
   memData.mlocalAutomation = localAutomation;
   memData.writeEEPROM();
-  debug("written pointPairing = ");
-  debug(pointPairing);
-  debug(" Written moveSpeed = ");
-  debugln(moveSpeed);
   loadPointValues();
 }
 void loadPointValues() {
-
   memData.readEEPROM();
   for (int i = 0; i < NO_OF_SERVOS; i++) {  // transfer memory values to point values
     point[i].thrownPos = memData.mthrownPos[i];
@@ -227,57 +234,99 @@ void loadPointValues() {
   if (localAutomation > 1) localAutomation = 1;
   if (moveSpeed < 3) moveSpeed = 3;
   if (moveSpeed > 200) moveSpeed = 200;
-  debug("loaded pointPairing = ");
-  debug(pointPairing);
-  debug("  loaded moveSpeed = ");
-  debugln(moveSpeed);
 }
 
 void startPos() {
   int tempspeed = moveSpeed;
   moveSpeed = MID_POINT;
   for (int i = 0; i < NO_OF_SERVOS; i++) {
-    point[i].target = 0;
+    // Extract the start position from currentStatus and set as target
+    point[i].target = (currentStatus >> i) & 1;
     point[i].MovePoint(i);
+    cmri.set_bit(i, point[i].target);
   }
+  cmriHandler();
   moveSpeed = tempspeed;
 }
-void scanButtons() {
-  // unsigned long nowMillis = millis();
-  // if (nowMillis - pollTimeOut >= pollFreq) {
-  //   pollTimeOut = millis();
-  for (int i = 0; i < NO_OF_SERVOS; i++) {
-    if (i < 16) {
 
-      if (!PCF1.read(i)) {
-        while (!(PCF1.read(i))) {}
-        delay(10);
-        // debug("PCF1 pressed for servo ");
-        // debug(i);
+void flipMove(int i) {
+  point[i].target = !point[i].target;  //flip the target checking for pairs
+  
+  point[i].changed = 1;
+  point[i].MovePoint(i);
 
-        point[i].target = !point[i].target;  //flip the target
-        point[i].MovePoint(i);
-        pointPairs(i);
-        lastPointMoved = i;
-        lcdPos();  //writes the position character
-      }
-    }
-    // else {
-    //   if (!PCF2.read(i - 16)) {
-    //     while (!PCF2.read(i - 16)) {}
-    //     delay(10);
-    //     // debug("PCF2 pressed for servo ");
-    //     // debug(i);
-
-    //     point[i].target = !point[i].target;
-    //     point[i].MovePoint(i);
-    //     pointPairs(i);
-    //     lastPointMoved = i;
-    //     lcdPos();  //writes the position character
-    //   }
-    // }
+  pointPairs(i);
+  lastPointMoved = i;
+  lcdPos();                            //writes the position character
+  if (cmriConnected) {                 //&& !fromCmr) {
+    cmri.set_bit(i, point[i].target);  // Feedback to CMRI
   }
 }
+void checkThreeWay(int i) {
+  if (threeWay > 0) {//there is a 3 way
+    int tempspeed = moveSpeed;
+    moveSpeed = 2500; //fast as possible
+    if (i == threeWay) { 
+      debugln("\n3 way found");
+      if (point[i].target == 0 && point[i + 1].target == 1) {
+        flipMove(i + 1);
+      }
+    }
+    if (i == threeWay + 1) {
+      debugln("\n3 way  + 1 found");
+      if (point[i].target == 0 && point[i - 1].target == 1) {
+        flipMove(i - 1);
+      }
+    }
+    moveSpeed = tempspeed;
+  }
+}
+void scanButtons() {
+
+  for (int i = 0; i < NO_OF_SERVOS; i++) {
+    bool incoming = cmri.get_bit(i);  //saves typing
+    // if (i == 77) {
+    //   //bool buttonPressed = 0;
+
+    //   Serial.print("\nincoming for ");
+    //   Serial.print(i);
+    //   Serial.print(" = ");
+    //   Serial.print(incoming);
+    //   Serial.print(" Target = ");
+    //   Serial.print(point[i].target);
+    //   Serial.print(" Changed = ");
+    //   Serial.print(point[i].changed);
+    // }
+
+    if (point[i].changed) {  // out of sync
+      if (incoming == point[i].target) {
+        point[i].changed = 0;  //jmri now in sync
+      }
+    }
+    //if (i < 16) {
+    if (!PCF1.read(i)) {
+      delay(0);
+      //point[i].changed = 1;  // flag as jmri out of sync
+      debug("\nButton pressed: point ");
+      debugln(i);
+
+      checkThreeWay(i);
+      flipMove(i);
+      while (!PCF1.read(i)) { delay(1); }
+
+    }  //else {
+    if (!point[i].changed && cmri.get_bit(i) != point[i].target) {
+      debug("\nNo But Pressed clicked  T/O ");
+      //point[i].changed = 1;
+      debugln(i);
+
+      checkThreeWay(i);
+      flipMove(i);
+    }
+  }
+}
+
+
 void pointPairs(int idx) {  //idx = the current switched point
   if (pointPairing) {
     //
@@ -347,30 +396,36 @@ void setLeds() {
   }
   FastLED.show();
 }
+
 void lcdGrid() {
   lcd.setCursor(0, 0);
-  lcd.print(F("Pnt 0123456789012345"));
+  lcd.print(F("Pnt "));
+  for (int j=0;j<16;j++){
+    if(j>=NO_OF_SERVOS) break;
+    lcd.print(j%10);
+  }
+ // lcd.print(F("Pnt 0123456789012345"));
   lcd.setCursor(0, 1);
   lcd.print(F("Pos "));
-  lcd.setCursor(0, 2);
-  lcd.print(F("Pnt 6789012345678901"));
-  lcd.setCursor(0, 3);
-  lcd.print(F("Pos "));
+  // lcd.setCursor(0, 2);
+  // lcd.print(F("Pnt 6789012345678901"));
+  // lcd.setCursor(0, 3);
+  // lcd.print(F("Pos "));
 }
 
 void lcdPos() {
   if (currentMenuIndex == 0) {
     lcd.setCursor(4, 1);
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < NO_OF_SERVOS; i++) {
       lcd.print(
         (pointPairing && POINT_PAIRS[i] != i) ? (point[i].target ? F("I") : F("\"")) : (point[i].target ? F("|") : F("-")));
     }
 
-    lcd.setCursor(4, 3);
-    for (int i = 0; i < 16; i++) {
-      lcd.print(
-        (pointPairing && POINT_PAIRS[i + 16] != i + 16) ? (point[i + 16].target ? F("I") : F("\"")) : (point[i + 16].target ? F("|") : F("-")));
-    }
+    // lcd.setCursor(4, 3);
+    // for (int i = 0; i < 16; i++) {
+    //   lcd.print(
+    //     (pointPairing && POINT_PAIRS[i + 16] != i + 16) ? (point[i + 16].target ? F("I") : F("\"")) : (point[i + 16].target ? F("|") : F("-")));
+    // }
   }
 }
 void lcdPrint() {
@@ -789,19 +844,30 @@ void centreServoPos(int pointNo) {
 
   moveSpeed = tempMoveSpeed;
 }
+void cmriHandler() {
+
+
+  cmriConnected = (cmri.process() != NULL);
+  if (cmriConnected) {
+    //TODO
+  } else {
+    debugln("\nno C/MRI");
+  }
+}
+
 
 //[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
 //[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[ SETUP ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
 //[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
 void setup() {
   Wire.begin();
-  Serial.begin(9600);
+  Serial.begin(19200);
   PCF1.begin();
   //PCF2.begin();
 
   FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NO_OF_LEDS);
 
-  Serial.println("plankA16 12/06/2025 RS485 included not tested");
+  Serial.println("plankA16 v 10.4 20/08/2025 RS485 included ");
   offLeds();
   int nDevices = 0;
   Serial.println("Scanning I2C ");
@@ -836,9 +902,9 @@ void setup() {
   lcd.init();  // initialize the lcd
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("Point control v10.3");
+  lcd.print("Point control v10.4");
   lcd.setCursor(0, 1);
-  lcd.print("Steve Lomax 2025");
+  lcd.print("Steve Lomax 08/25");
   delay(1000);
 
   encoder.write(0);
@@ -879,7 +945,9 @@ void setup() {
       centreServoFlag = 1;
     }
   }
-  delay(2000);
+  Serial.end();
+  delay(1000);
+  bus.begin(19200);
 
 
   startPos();
@@ -896,12 +964,12 @@ void loop() {
 
   if (moving) {
 
-    // lcdPos();
     moving = 0;
     for (int i = 0; i < NO_OF_SERVOS; i++) {
       point[i].MovePoint(i);
     }
   } else {
+    cmriHandler();
     lcdPos();
     lcdControlMenu();
   }
